@@ -1,0 +1,99 @@
+--*******************************************************************************************************************
+--* Anlegen der Extraktionstabelle PSCHLUE
+--* (Tabelle einschl. Indices, PK-, FK-Constraints, Trigger, Kommentare, etc.)
+--*
+--* Generiertes Skript, folgende Punkte müssen beachtet werden:
+--* 1. Evtl. überflüssige Spalten entfernen (CREATE TABLE und COMMENT)
+--* 2. Seltene Datentypen (nicht INTEGER, CHAR, VARCHAR, DATE, TIMESTAMP, etc.) prüfen
+--* 3. Default SCD-Source Key ist die erste fachliche Spalte - ggfs. UNIQUE INDEX ändern  !!!
+--* 4. Default-Job-Name: Ext_PSCHLUE - ggfs. COMMENT und SELECT metadata.adm_job_ins(...) ändern  !!!
+--*******************************************************************************************************************
+
+-- DROP TABLE extraktion.pschlue;
+
+
+SELECT slkonz, slkgrp, slid, slkey, sltxt1, sltxt2, sldtm
+
+
+
+
+CREATE TABLE extraktion.pschlue_v8 (
+-- Künstlicher PK:
+id_pschlue_v8 INT GENERATED ALWAYS AS IDENTITY NOT NULL
+-- SCD-Felder:
+, scd_start DATE
+, scd_end DATE
+-- Technische Felder:
+, t_id_log INT
+, t_modtime TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL
+, t_status INT
+, t_fehler INT
+, t_fehlertext VARCHAR(2000)
+-- Fachliche Felder (SCD-Source Key):
+-- Fachliche Felder (SCD-Typ 2):
+, slkgrp NCHAR(10)
+, slid NCHAR(10)
+, slkey NCHAR(50)
+, sltxt1 NCHAR(10)
+, sltxt2 NVARCHAR2(25)
+, sldtm NUMBER(8,0)
+);
+
+-- Unique-Index für das PK-Feld
+CREATE UNIQUE INDEX u01_pschlue_v8 ON extraktion.pschlue_v8(id_pschlue_v8);
+-- PK-Constraint
+ALTER TABLE extraktion.pschlue_v8 ADD CONSTRAINT pk_pschlue_v8 PRIMARY KEY (id_pschlue_v8) USING INDEX u01_pschlue_v8;
+-- Unique-Index zum Verhindern "doppelter" Sätze. Pro Source-Key und scd_start-Tag darf nur ein Satz existieren:
+CREATE UNIQUE INDEX u02_pschlue_v8 ON extraktion.pschlue_v8(slkgrp,slid,slkey,scd_start);
+
+-- Trigger
+CREATE OR REPLACE TRIGGER tr_pschlue_01_v8 BEFORE INSERT OR UPDATE ON extraktion.pschlue_v8
+FOR EACH ROW
+DECLARE
+  max_scd_end DATE := TO_DATE('01.01.9999','DD.MM.YYYY');
+  akt_scd_start DATE := TRUNC(:new.scd_start);
+  akt_scd_end DATE := TRUNC(:new.scd_end);
+BEGIN
+IF INSERTING THEN
+:new.scd_start := TRUNC(:new.scd_start);
+:new.scd_end := TRUNC(:new.scd_end);
+END IF;
+IF UPDATING THEN
+  :new.t_modtime := SYSDATE;
+  IF TRUNC(:new.scd_end) != :old.scd_end AND TRUNC(:new.scd_end) != max_scd_end -- Update durch SCD-Komponente
+  THEN IF TRUNC(:new.scd_start) = TRUNC(SYSDATE)       -- Zweite Aenderung an einem Tag:
+       THEN NULL;
+       ELSE :new.scd_end := akt_scd_end) - 1;
+       END IF;
+  ELSE :new.scd_end := TRUNC(SYSDATE)-1;
+  END IF;
+  IF :new.t_fehler IS NULL THEN
+    :new.t_fehlertext := NULL;
+  END IF;
+END IF;
+END;
+
+
+
+-- Kommentare:
+COMMENT ON TABLE extraktion.pschlue_v8 IS 'Zentrale Schlüsseldatei <Ext_PSCHLUE_V8@AS400.rsmdatv8.pschlue_v8>';
+
+COMMENT ON COLUMN extraktion.pschlue_v8.slkgrp IS 'KEY-GRP. SL-DATEI';
+COMMENT ON COLUMN extraktion.pschlue_v8.slid IS 'SCHLÜSSEL IDENT.';
+COMMENT ON COLUMN extraktion.pschlue_v8.slkey IS 'SCHLÜSSEL- WERT';
+COMMENT ON COLUMN extraktion.pschlue_v8.sltxt1 IS 'SCHLÜSSEL- KURZTEXT';
+COMMENT ON COLUMN extraktion.pschlue_v8.sltxt2 IS 'SCHLÜSSELTEXT';
+COMMENT ON COLUMN extraktion.pschlue_v8.sldtm IS 'MODIFIK. DATUM';
+
+-- Job in METADATA.JOB anlegen:
+SELECT metadata.adm_job_ins('Logistik_LGST_Landsberg','Extraktion','Ext_PSCHLUE_V8','LFS');
+
+-- ************************************************************************************************************************************************************************
+
+
+
+-- V8:
+SELECT slkonz, slkgrp, slid, slkey, sltxt1, sltxt2, sldtm
+FROM rsmdatv8.pschlue
+WHERE slkonz='999' AND slkgrp='018'
+
